@@ -561,3 +561,125 @@ export async function getCurrentUser(userId: string): Promise<PhoneUserDTO> {
     createdAt: profile.created_at.toISOString(),
   }
 }
+
+// ================================
+// 6. 账号密码登录（降级方案）
+// ================================
+
+export interface PasswordLoginParams {
+  username: string
+  password: string
+  ip?: string
+  userAgent?: string
+}
+
+export async function loginWithPassword({
+  username,
+  password,
+  ip,
+  userAgent,
+}: PasswordLoginParams): Promise<LoginResponseData> {
+  // 1. 参数校验
+  if (!username || !password) {
+    throw new BusinessException(ErrorCode.INVALID_PARAMS, '账号和密码不能为空', 400)
+  }
+
+  // 2. 查找用户（by username）
+  const profile = await prisma.profile.findUnique({
+    where: { username },
+  })
+
+  // 3. 统一错误（不区分用户不存在/密码错误，防枚举）
+  if (!profile || !profile.password_hash) {
+    throw new BusinessException(ErrorCode.INVALID_PASSWORD, '账号或密码错误', 400)
+  }
+
+  // 4. 检查账号状态
+  if (profile.status === 'banned' || profile.status === 'inactive') {
+    throw new BusinessException(ErrorCode.ACCOUNT_DISABLED, '账号已被禁用', 403)
+  }
+
+  if (profile.locked_until && profile.locked_until > new Date()) {
+    const remainMin = Math.ceil(
+      (profile.locked_until.getTime() - Date.now()) / 60000
+    )
+    throw new BusinessException(
+      ErrorCode.ACCOUNT_LOCKED,
+      `账号已被锁定，请${remainMin}分钟后重试`,
+      403
+    )
+  }
+
+  // 5. 验证密码（bcrypt）
+  const bcrypt = await import('bcryptjs')
+  const failKey = `zijing:login:fail:pwd:${profile.id}`
+  const isMatch = await bcrypt.compare(password, profile.password_hash)
+
+  if (!isMatch) {
+    const failCount = await redis.incr(failKey)
+    if (failCount === 1) {
+      await redis.expire(failKey, LOGIN_LOCK_TTL)
+    }
+    if (failCount >= LOGIN_MAX_FAIL) {
+      const lockUntil = new Date(Date.now() + LOGIN_LOCK_TTL * 1000)
+      await prisma.profile.update({
+        where: { id: profile.id },
+        data: { locked_until: lockUntil },
+      })
+      throw new BusinessException(
+        ErrorCode.ACCOUNT_LOCKED,
+        '连续登录失败次数过多，账号已被锁定30分钟',
+        403
+      )
+    }
+    const remaining = LOGIN_MAX_FAIL - Number(failCount)
+    throw new BusinessException(
+      ErrorCode.INVALID_PASSWORD,
+      `账号或密码错误，还可尝试${remaining}次`,
+      400
+    )
+  }
+
+  // 6. 清除锁定状态（如有）
+  if (profile.locked_until) {
+    await prisma.profile.update({
+      where: { id: profile.id },
+      data: { locked_until: null },
+    })
+  }
+
+  // 7. 生成 Token（复用现有逻辑）
+  const accessToken = await signAccessToken(profile.id, profile.role)
+  const plainRefreshToken = generateRefreshToken()
+  const refreshTokenHash = sha256(plainRefreshToken)
+
+  // 8. 存储 Session
+  const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL * 1000)
+  await prisma.userSession.create({
+    data: {
+      user_id: profile.id,
+      token_hash: refreshTokenHash,
+      ip_address: ip ?? null,
+      user_agent: userAgent ?? null,
+      expires_at: expiresAt,
+    },
+  })
+
+  // 9. 清理失败计数
+  await redis.del(failKey)
+
+  console.log(`[Auth] 密码登录成功: userId=${profile.id}, username=${username}, ip=${ip ?? 'unknown'}`)
+
+  return {
+    accessToken,
+    refreshToken: plainRefreshToken,
+    expiresIn: ACCESS_TOKEN_TTL,
+    isNewUser: false,
+    user: {
+      id: profile.id,
+      nickname: profile.nickname,
+      avatar: profile.avatar_url,
+      role: profile.role as ZijingRole,
+    },
+  }
+}

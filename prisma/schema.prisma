@@ -1,7 +1,7 @@
 // =============================================================================
 // "字见" AI驱动聋哑人识字辅助系统 — Prisma Schema
 // =============================================================================
-// 数据库: PostgreSQL 16 (Supabase)
+// 数据库: SQLite (本地开发)
 // ORM:    Prisma 5
 // 架构参考: docs/arch/Evolved_ARCH.md § 6. 数据库设计
 // 任务:    TASK-DB-001
@@ -13,49 +13,17 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
 }
 
 // =============================================================================
-// 枚举类型
+// 枚举类型说明（SQLite 不支持 enum，使用 String 存储，应用层约束）
 // =============================================================================
-
-/// 用户角色（RBAC 权限控制核心）
-/// - child:    儿童用户，受严格限制（每日限20次生成、夜间禁用、须绑定监护人）
-/// - adult:    成人用户，默认角色
-/// - guardian: 监护人，可查看被监护儿童的学习记录
-/// - teacher:  教师，可查看班级学习报告
-/// - admin:    管理员，可进行内容审核管理
-enum Role {
-  child
-  adult
-  guardian
-  teacher
-  admin
-}
-
-/// 用户账号状态
-enum UserStatus {
-  active   // 正常使用
-  inactive // 已停用（用户主动注销）
-  banned   // 已封禁（违规封禁）
-}
-
-/// 可视化内容类型
-enum ContentType {
-  image // 静态图片（通义万相生成）
-  video // 短视频（可灵 AI 生成）
-}
-
-/// 内容审核状态（三级审核流水线）
-/// 所有内容必须为 approved 后方可对用户展示（安全生命线，绝不降级）
-enum ReviewStatus {
-  pending  // 待审核（刚生成，未经审核）
-  approved // 已通过（可对用户展示）
-  rejected // 已拒绝（内容违规，不可展示）
-}
+// Role:         child | adult | guardian | teacher | admin
+// UserStatus:   active | inactive | banned
+// ContentType:  image | video
+// ReviewStatus: pending | approved | rejected
 
 // =============================================================================
 // 1. profiles — 用户基础信息表
@@ -70,12 +38,14 @@ model Profile {
   id           String     @id @default(uuid())
   phone_enc    String?    // 字段级加密存储的手机号（AES-256-CBC + 随机IV，明文不落库）
   phone_index  String?    @unique // HMAC-SHA256(phone) 确定性索引，用于登录查询
-  nickname     String?    @db.VarChar(50)
-  avatar_url   String?    @db.VarChar(500)
-  role         Role       @default(adult)
-  status       UserStatus @default(active)
-  locked_until DateTime?  // 账号锁定截止时间（null = 未锁定）
-  created_at   DateTime   @default(now())
+  nickname     String?
+  avatar_url   String?
+  role         String     @default("adult")     // child | adult | guardian | teacher | admin
+  status       String     @default("active")    // active | inactive | banned
+  locked_until  DateTime?  // 账号锁定截止时间（null = 未锁定）
+  username      String?    @unique                     // 账号密码登录用户名（降级方案，可选）
+  password_hash String?                                // bcrypt哈希（降级方案，可选）
+  created_at    DateTime   @default(now())
   updated_at   DateTime   @updatedAt
 
   // 关联关系
@@ -99,12 +69,12 @@ model Profile {
 model UserSession {
   id         String    @id @default(uuid())
   user_id    String
-  token_hash String    @db.VarChar(64)  // JWT Token 的 SHA-256 哈希（64位十六进制）
-  ip_address String?   @db.VarChar(45)  // 支持 IPv4（≤15位）和 IPv6（≤45位）
-  user_agent String?   @db.VarChar(500) // 浏览器/设备标识
+  token_hash String                   // JWT Token 的 SHA-256 哈希（64位十六进制）
+  ip_address String?                  // 支持 IPv4（≤15位）和 IPv6（≤45位）
+  user_agent String?                  // 浏览器/设备标识
   created_at DateTime  @default(now())
-  expires_at DateTime  // Token 自然过期时间
-  revoked_at DateTime? // 主动撤销时间（null = 会话有效）
+  expires_at DateTime                 // Token 自然过期时间
+  revoked_at DateTime?                // 主动撤销时间（null = 会话有效）
 
   // 关联关系
   user Profile @relation(fields: [user_id], references: [id], onDelete: Cascade)
@@ -124,7 +94,7 @@ model UserSession {
 model WordBook {
   id         String   @id @default(uuid())
   user_id    String
-  name       String   @db.VarChar(100)
+  name       String
   is_default Boolean  @default(false)
   created_at DateTime @default(now())
 
@@ -150,16 +120,15 @@ model WordBook {
 ///   review_count:  累计复习次数
 ///   next_review_at: 下次复习时间（SM-2 算法计算，null = 尚未开始学习）
 ///
-/// 注：PostgreSQL 部分索引（WHERE mastery_level < 5）需在迁移 SQL 中手动添加
-///     见 prisma/migrations/xxx/migration.sql 中 idx_wbi_review 的创建语句
+/// 注：SQLite 不支持部分索引（WHERE mastery_level < 5），如需生产优化请切换 PostgreSQL
 model WordBookItem {
   id             String    @id @default(uuid())
   book_id        String
-  character      String    @db.VarChar(4)              // 单个汉字（含部分多字节字符，预留4字节）
-  mastery_level  Int       @default(0)                 // SM-2 掌握等级 0-5
-  ease_factor    Decimal   @default(2.5) @db.Decimal(4, 2) // SM-2 难度因子（保留2位小数）
-  review_count   Int       @default(0)                 // 累计复习次数
-  next_review_at DateTime?                             // 下次复习时间（SM-2 预计算）
+  character      String                           // 单个汉字（含部分多字节字符，预留4字节）
+  mastery_level  Int       @default(0)            // SM-2 掌握等级 0-5
+  ease_factor    Float     @default(2.5)          // SM-2 难度因子（保留2位小数）
+  review_count   Int       @default(0)            // 累计复习次数
+  next_review_at DateTime?                        // 下次复习时间（SM-2 预计算）
   created_at     DateTime  @default(now())
   updated_at     DateTime  @updatedAt
 
@@ -167,7 +136,6 @@ model WordBookItem {
   book WordBook @relation(fields: [book_id], references: [id], onDelete: Cascade)
 
   // 复合索引：按识字库+复习时间查询待复习汉字（核心学习路径，必须极快）
-  // 生产补充：在迁移 SQL 中替换为部分索引 WHERE mastery_level < 5
   @@index([book_id, next_review_at])
   // 复合索引：按识字库+掌握程度过滤（学习进度统计）
   @@index([book_id, mastery_level])
@@ -181,23 +149,22 @@ model WordBookItem {
 /// 用户学习行为记录
 /// 用于进度统计、连续学习天数计算、学习报告生成（监护人/教师可查）
 ///
-/// action_type 取值约定（应用层强约束，数据库层 VarChar 存储）:
+/// action_type 取值约定（应用层强约束，数据库层存储）:
 ///   master   — 首次掌握一个汉字
 ///   practice — 日常练习
 ///   review   — SM-2 间隔复习
 model LearningRecord {
   id          String   @id @default(uuid())
   user_id     String
-  character   String   @db.VarChar(4)   // 本次学习的汉字
-  action_type String   @db.VarChar(20)  // master | practice | review
-  accuracy    Int      // 本次正确率 0-100（百分比整数）
+  character   String                    // 本次学习的汉字
+  action_type String                    // master | practice | review
+  accuracy    Int                       // 本次正确率 0-100（百分比整数）
   created_at  DateTime @default(now())
 
   // 关联关系
   user Profile @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   // 覆盖索引：按用户+时间查询（高频，覆盖 character/action_type/accuracy 字段）
-  // 注：完整覆盖索引（INCLUDE 子句）在迁移 SQL 中手动添加：idx_lr_user_ts
   @@index([user_id, created_at])
   @@map("learning_records")
 }
@@ -212,11 +179,11 @@ model LearningRecord {
 model TranslateHistory {
   id          String   @id @default(uuid())
   user_id     String
-  input_text  String   @db.Text          // 手语式原文（最大500字符，应用层限制）
-  output_text String   @db.Text          // 书面语译文
-  confidence  Decimal? @db.Decimal(4, 3) // AI 转换置信度 0.000-1.000
-  ai_provider String?  @db.VarChar(50)   // 使用的 AI 服务商（通义千问/DeepSeek 等）
-  is_fallback Boolean  @default(false)   // true = 使用了规则引擎降级方案
+  input_text  String                    // 手语式原文（最大500字符，应用层限制）
+  output_text String                    // 书面语译文
+  confidence  Float?                    // AI 转换置信度 0.000-1.000
+  ai_provider String?                   // 使用的 AI 服务商（通义千问/DeepSeek 等）
+  is_fallback Boolean  @default(false)  // true = 使用了规则引擎降级方案
   created_at  DateTime @default(now())
 
   // 关联关系
@@ -240,14 +207,14 @@ model TranslateHistory {
 /// 唯一约束防止重复生成同款内容（节约 AI API 费用）
 model VisualContent {
   id              String       @id @default(uuid())
-  character       String       @db.VarChar(4)   // 对应汉字
-  style           String       @db.VarChar(30)  // cartoon | ink | 3d | pictographic
-  content_type    ContentType
-  storage_url     String       @db.VarChar(500) // Supabase Storage 的对象路径或签名 URL
-  prompt_hash     String?      @db.VarChar(64)  // SHA-256(prompt)，用于去重检测
-  user_id         String?                       // 预生成内容为 NULL
-  is_pregenerated Boolean      @default(false)  // true = 3500常用字预生成资源
-  review_status   ReviewStatus @default(pending) // 三级内容审核状态（安全生命线）
+  character       String                            // 对应汉字
+  style           String                            // cartoon | ink | 3d | pictographic
+  content_type    String                            // image | video
+  storage_url     String                            // Supabase Storage 的对象路径或签名 URL
+  prompt_hash     String?                           // SHA-256(prompt)，用于去重检测
+  user_id         String?                           // 预生成内容为 NULL
+  is_pregenerated Boolean      @default(false)      // true = 3500常用字预生成资源
+  review_status   String       @default("pending")  // pending | approved | rejected（安全生命线）
   created_at      DateTime     @default(now())
 
   // 唯一约束：同一汉字 + 风格 + 类型 + 预生成标记 组合唯一
@@ -268,10 +235,10 @@ model VisualContent {
 /// 初始数据通过 prisma/seed.ts 批量导入（常见物体约200条）
 model ObjectCharMapping {
   id              String   @id @default(uuid())
-  object_label_en String   @unique @db.VarChar(100) // YOLO 英文标签（全局唯一映射）
-  char_zh         String   @db.VarChar(10)          // 对应中文汉字
-  pinyin          String?  @db.VarChar(50)           // 拼音标注（含声调，如 "māo"）
-  category        String?  @db.VarChar(50)           // 物体分类（动物/植物/交通工具/食物等）
+  object_label_en String   @unique                 // YOLO 英文标签（全局唯一映射）
+  char_zh         String                           // 对应中文汉字
+  pinyin          String?                          // 拼音标注（含声调，如 "māo"）
+  category        String?                          // 物体分类（动物/植物/交通工具/食物等）
   created_at      DateTime @default(now())
 
   @@map("object_char_mappings")
@@ -287,10 +254,10 @@ model ObjectCharMapping {
 model ObjectRecognitionRecord {
   id                String   @id @default(uuid())
   user_id           String?                          // 未登录设备为 NULL
-  image_url         String?  @db.VarChar(500)        // 上传到 Supabase Storage 的图片路径
-  label_zh          String   @db.VarChar(10)         // 识别到的中文汉字
-  label_en          String?  @db.VarChar(100)        // YOLO 原始英文标签
-  confidence        Decimal? @db.Decimal(5, 4)       // 识别置信度 0.0000-1.0000（4位小数）
+  image_url         String?                          // 上传到 Supabase Storage 的图片路径
+  label_zh          String                           // 识别到的中文汉字
+  label_en          String?                          // YOLO 原始英文标签
+  confidence        Float?                           // 识别置信度 0.0000-1.0000（4位小数）
   recognized_at     DateTime @default(now())
   saved_to_wordbook Boolean  @default(false)         // 用户是否已将此字加入识字库
 

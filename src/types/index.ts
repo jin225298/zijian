@@ -204,6 +204,11 @@ export enum ErrorCode {
   VISUAL_DAILY_LIMIT_EXCEEDED = 70001,  // 儿童用户每日生成次数超限（20次）
   VISUAL_TASK_NOT_FOUND = 70002,        // 任务不存在
   VISUAL_CHAR_INVALID = 70003,          // 汉字参数无效
+
+  // CSRF安全错误
+  CSRF_TOKEN_MISSING = 80001,           // 缺少CSRF Token
+  CSRF_TOKEN_MISMATCH = 80002,          // CSRF Token不匹配
+  CSRF_TOKEN_INVALID = 80003,           // CSRF Token无效或已过期
 }
 
 // ================================

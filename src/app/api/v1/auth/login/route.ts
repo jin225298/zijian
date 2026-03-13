@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { login } from '@/server/services/auth.service'
 import { handleApiError } from '@/server/middleware/error.middleware'
+import { addCsrfTokenToResponse } from '@/server/middleware/csrf.middleware'
 
 // 请求体 Schema
 const LoginSchema = z.object({
@@ -31,10 +32,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const data = await login({ phone, code, ip, userAgent })
 
-    return NextResponse.json(
+    // 安全修复: 登录成功后设置CSRF Token
+    const response = NextResponse.json(
       { success: true, data },
       { status: 200 }
     )
+    
+    // 添加CSRF Token到响应
+    addCsrfTokenToResponse(response)
+    
+    return response
   } catch (error) {
     return handleApiError(error)
   }

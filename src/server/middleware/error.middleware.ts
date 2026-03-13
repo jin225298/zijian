@@ -42,6 +42,10 @@ function getDefaultMessage(code: ErrorCode): string {
     [ErrorCode.VISUAL_DAILY_LIMIT_EXCEEDED]: '今日可视化生成次数已达上限',
     [ErrorCode.VISUAL_TASK_NOT_FOUND]: '任务不存在或已过期',
     [ErrorCode.VISUAL_CHAR_INVALID]: '汉字参数无效',
+    // CSRF安全错误
+    [ErrorCode.CSRF_TOKEN_MISSING]: '缺少CSRF Token',
+    [ErrorCode.CSRF_TOKEN_MISMATCH]: 'CSRF Token不匹配',
+    [ErrorCode.CSRF_TOKEN_INVALID]: 'CSRF Token无效或已过期',
   }
   return messages[code] ?? '服务器内部错误'
 }
