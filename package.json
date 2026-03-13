@@ -1,0 +1,62 @@
+{
+  "name": "zijing",
+  "version": "0.1.0",
+  "description": "字见 - AI驱动的聋哑人识字辅助系统",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio",
+    "test": "jest",
+    "test:coverage": "jest --coverage"
+  },
+  "dependencies": {
+    "next": "^15.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "@prisma/client": "^5.0.0",
+    "@supabase/supabase-js": "^2.0.0",
+    "@upstash/redis": "^1.0.0",
+    "@upstash/ratelimit": "^1.0.0",
+    "ioredis": "^5.0.0",
+    "zod": "^3.0.0",
+    "bcryptjs": "^2.4.3",
+    "jose": "^5.0.0",
+    "uuid": "^9.0.0",
+    "hanzi-writer": "^3.0.0",
+    "cnchar": "^3.0.0",
+    "cnchar-pro": "^3.0.0",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.0.0",
+    "tailwind-merge": "^2.0.0",
+    "lucide-react": "^0.300.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "prisma": "^5.0.0",
+    "tailwindcss": "^3.4.0",
+    "postcss": "^8.0.0",
+    "autoprefixer": "^10.0.0",
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.0.0",
+    "@types/react-dom": "^18.0.0",
+    "@types/bcryptjs": "^2.4.0",
+    "@types/uuid": "^9.0.0",
+    "eslint": "^8.0.0",
+    "eslint-config-next": "^15.0.0",
+    "jest": "^29.0.0",
+    "@types/jest": "^29.0.0",
+    "ts-jest": "^29.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "packageManager": "pnpm@8.15.0"
+}
