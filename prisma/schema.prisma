@@ -63,11 +63,13 @@ enum ReviewStatus {
 
 /// 用户基础信息表
 /// 与 Supabase Auth 的 auth.users 通过 id（UUID）关联
-/// phone_enc: 字段级加密存储（AES-256），登录时以加密值查询，避免明文落库
+/// phone_enc:   字段级加密存储（AES-256-CBC + 随机IV），用于展示解密，不可直接检索
+/// phone_index: HMAC-SHA256 确定性索引，用于登录时查询（明文不落库）
 /// locked_until: 暴力破解防护，连续5次失败后锁定30分钟
 model Profile {
   id           String     @id @default(uuid())
-  phone_enc    String?    // 字段级加密存储的手机号（AES-256，明文不落库）
+  phone_enc    String?    // 字段级加密存储的手机号（AES-256-CBC + 随机IV，明文不落库）
+  phone_index  String?    @unique // HMAC-SHA256(phone) 确定性索引，用于登录查询
   nickname     String?    @db.VarChar(50)
   avatar_url   String?    @db.VarChar(500)
   role         Role       @default(adult)
@@ -82,7 +84,7 @@ model Profile {
   learning_records  LearningRecord[]
   translate_history TranslateHistory[]
 
-  // phone_enc 查询索引（登录时根据加密手机号定位用户）
+  // phone_enc 查询索引（历史保留，实际登录改用 phone_index）
   @@index([phone_enc])
   @@map("profiles")
 }

@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { convertService } from '@/server/services/convert.service'
 import { withOptionalAuth } from '@/server/middleware/auth.middleware'
+import { withCsrfProtection } from '@/server/middleware/csrf.middleware'
 import { handleApiError, BusinessException } from '@/server/middleware/error.middleware'
 import { ErrorCode } from '@/types'
 
@@ -40,60 +41,63 @@ const ConvertRequestSchema = z.object({
 // ==========================================
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  return withOptionalAuth(request, async (_req, payload) => {
-    try {
-      // 1. 解析请求体
-      let body: unknown
+  // BUG-002修复：通过 withCsrfProtection 包裹，防止跨站请求伪造
+  return withCsrfProtection(request, (req) =>
+    withOptionalAuth(req, async (_req2, payload) => {
       try {
-        body = await request.json()
-      } catch {
-        throw new BusinessException(
-          ErrorCode.INVALID_PARAMS,
-          '请求体必须为合法的 JSON 格式',
-          400
+        // 1. 解析请求体
+        let body: unknown
+        try {
+          body = await request.json()
+        } catch {
+          throw new BusinessException(
+            ErrorCode.INVALID_PARAMS,
+            '请求体必须为合法的 JSON 格式',
+            400
+          )
+        }
+
+        // 2. 参数校验（Zod）
+        const parseResult = ConvertRequestSchema.safeParse(body)
+        if (!parseResult.success) {
+          const errorMessages = parseResult.error.errors
+            .map((e) => `${e.path.join('.')}: ${e.message}`)
+            .join('; ')
+          throw new BusinessException(
+            ErrorCode.INVALID_PARAMS,
+            `参数验证失败: ${errorMessages}`,
+            400
+          )
+        }
+
+        const { text, context } = parseResult.data
+        const userId = payload?.userId
+
+        console.log(
+          `[ConvertAPI] 转换请求: context=${context}, length=${text.length}, userId=${userId ?? '匿名'}`
         )
-      }
 
-      // 2. 参数校验（Zod）
-      const parseResult = ConvertRequestSchema.safeParse(body)
-      if (!parseResult.success) {
-        const errorMessages = parseResult.error.errors
-          .map((e) => `${e.path.join('.')}: ${e.message}`)
-          .join('; ')
-        throw new BusinessException(
-          ErrorCode.INVALID_PARAMS,
-          `参数验证失败: ${errorMessages}`,
-          400
-        )
-      }
+        // 3. 调用转换服务
+        const result = await convertService.convert(text, context, userId)
 
-      const { text, context } = parseResult.data
-      const userId = payload?.userId
-
-      console.log(
-        `[ConvertAPI] 转换请求: context=${context}, length=${text.length}, userId=${userId ?? '匿名'}`
-      )
-
-      // 3. 调用转换服务
-      const result = await convertService.convert(text, context, userId)
-
-      // 4. 返回成功响应
-      return NextResponse.json(
-        {
-          success: true,
-          data: {
-            original: result.original,
-            converted: result.converted,
-            confidence: result.confidence,
-            alternatives: result.alternatives,
-            isFallback: result.isFallback,
-            diff: result.diff,
+        // 4. 返回成功响应
+        return NextResponse.json(
+          {
+            success: true,
+            data: {
+              original: result.original,
+              converted: result.converted,
+              confidence: result.confidence,
+              alternatives: result.alternatives,
+              isFallback: result.isFallback,
+              diff: result.diff,
+            },
           },
-        },
-        { status: 200 }
-      )
-    } catch (error) {
-      return handleApiError(error)
-    }
-  })
+          { status: 200 }
+        )
+      } catch (error) {
+        return handleApiError(error)
+      }
+    })
+  )
 }

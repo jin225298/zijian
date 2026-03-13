@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { withAuth } from '@/server/middleware/auth.middleware'
+import { withCsrfProtection } from '@/server/middleware/csrf.middleware'
 import { handleApiError } from '@/server/middleware/error.middleware'
 import { getWordBooks, createWordBook } from '@/server/services/wordbook.service'
 import type { JwtPayload, WordbookDTO } from '@/types'
@@ -71,28 +72,31 @@ const CreateWordBookSchema = z.object({
 })
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  return withAuth(request, async (req, payload: JwtPayload) => {
-    try {
-      const body = await req.json()
-      const { name } = CreateWordBookSchema.parse(body)
+  // BUG-002修复：通过 withCsrfProtection 包裹，防止跨站请求伪造
+  return withCsrfProtection(request, (req) =>
+    withAuth(req, async (req2, payload: JwtPayload) => {
+      try {
+        const body = await req2.json()
+        const { name } = CreateWordBookSchema.parse(body)
 
-      const book = await createWordBook({ userId: payload.userId, name })
+        const book = await createWordBook({ userId: payload.userId, name })
 
-      const wordbook: WordbookDTO = {
-        id: book.id,
-        userId: payload.userId,
-        name: book.name,
-        description: null,
-        isPublic: false,
-        coverColor: getCoverColor(book.id),
-        charCount: 0,
-        createdAt: book.created_at,
-        updatedAt: book.created_at,
+        const wordbook: WordbookDTO = {
+          id: book.id,
+          userId: payload.userId,
+          name: book.name,
+          description: null,
+          isPublic: false,
+          coverColor: getCoverColor(book.id),
+          charCount: 0,
+          createdAt: book.created_at,
+          updatedAt: book.created_at,
+        }
+
+        return NextResponse.json(apiResponse(wordbook), { status: 201 })
+      } catch (error) {
+        return handleApiError(error)
       }
-
-      return NextResponse.json(apiResponse(wordbook), { status: 201 })
-    } catch (error) {
-      return handleApiError(error)
-    }
-  })
+    })
+  )
 }

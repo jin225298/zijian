@@ -56,46 +56,80 @@ const REDIS_KEY = {
 // ================================
 
 /**
- * 获取 AES-256-CBC 加密所需的 key 和 iv
+ * 获取 AES-256-CBC 加密所需的 key
  * 环境变量:
  *   PHONE_ENCRYPTION_KEY — 64位十六进制字符串（32字节）
- *   PHONE_ENCRYPTION_IV  — 32位十六进制字符串（16字节）
+ * 
+ * 安全修复: 不再使用固定IV，每次加密生成随机IV
  */
-function getEncryptionParams(): { key: Buffer; iv: Buffer } {
+function getEncryptionKey(): Buffer {
   const keyHex = process.env.PHONE_ENCRYPTION_KEY
-  const ivHex = process.env.PHONE_ENCRYPTION_IV
 
-  if (!keyHex || !ivHex) {
-    throw new Error('[AuthService] 缺少环境变量: PHONE_ENCRYPTION_KEY / PHONE_ENCRYPTION_IV')
+  if (!keyHex) {
+    throw new Error('[AuthService] 缺少环境变量: PHONE_ENCRYPTION_KEY')
   }
 
-  return {
-    key: Buffer.from(keyHex, 'hex'),
-    iv: Buffer.from(ivHex, 'hex'),
+  if (keyHex.length !== 64) {
+    throw new Error('[AuthService] PHONE_ENCRYPTION_KEY 必须为64位十六进制字符串（32字节）')
   }
+
+  return Buffer.from(keyHex, 'hex')
 }
 
 /**
- * 对手机号进行 AES-256-CBC 加密（确定性，用于数据库检索）
- * 相同明文 + 相同 key/iv → 相同密文，支持 WHERE phone_enc = ? 查询
+ * 对手机号进行 AES-256-CBC 加密（安全版本：随机IV）
+ * 格式: iv(32位hex) + ciphertext(hex)
+ * 注意: 每次加密结果不同，无法直接用于数据库检索
+ * 如需检索，请使用 encryptPhoneForSearch() 或建立单独的检索索引
  */
 export function encryptPhone(phone: string): string {
-  const { key, iv } = getEncryptionParams()
+  const key = getEncryptionKey()
+  // 安全修复: 每次加密使用随机IV
+  const iv = crypto.randomBytes(16)
   const cipher = crypto.createCipheriv('aes-256-cbc', key, iv)
   let encrypted = cipher.update(phone, 'utf8', 'hex')
   encrypted += cipher.final('hex')
-  return encrypted
+  // 返回格式: iv + ciphertext，便于解密时提取IV
+  return iv.toString('hex') + ':' + encrypted
 }
 
 /**
  * 解密手机号（用于需要回显明文的场景）
+ * 支持新格式(iv:ciphertext)和旧格式(固定IV)的向后兼容
  */
 export function decryptPhone(phoneEnc: string): string {
-  const { key, iv } = getEncryptionParams()
+  const key = getEncryptionKey()
+  
+  // 检查是否为新格式（包含冒号分隔符）
+  if (phoneEnc.includes(':')) {
+    const [ivHex, ciphertext] = phoneEnc.split(':')
+    const iv = Buffer.from(ivHex, 'hex')
+    const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv)
+    let decrypted = decipher.update(ciphertext, 'hex', 'utf8')
+    decrypted += decipher.final('utf8')
+    return decrypted
+  }
+  
+  // 向后兼容：旧格式使用固定IV（仅用于解密历史数据）
+  const ivHex = process.env.PHONE_ENCRYPTION_IV
+  if (!ivHex) {
+    throw new Error('[AuthService] 无法解密旧格式数据：缺少 PHONE_ENCRYPTION_IV')
+  }
+  const iv = Buffer.from(ivHex, 'hex')
   const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv)
   let decrypted = decipher.update(phoneEnc, 'hex', 'utf8')
   decrypted += decipher.final('utf8')
   return decrypted
+}
+
+/**
+ * 使用HMAC生成可检索的手机号索引
+ * 用于数据库查询，不暴露明文
+ */
+export function getPhoneSearchIndex(phone: string): string {
+  const key = getEncryptionKey()
+  // 使用HMAC-SHA256生成确定性索引
+  return crypto.createHmac('sha256', key).update(phone).digest('hex')
 }
 
 /**
@@ -116,25 +150,64 @@ function sha256(input: string): string {
 // JWT 工具函数
 // ================================
 
+/** JWT 允许的算法白名单 */
+const ALLOWED_JWT_ALGORITHMS = ['HS256'] as const
+
+/** JWT密钥最小长度要求（字符） */
+const MIN_JWT_SECRET_LENGTH = 32
+
+/**
+ * 验证JWT密钥强度
+ * 安全修复: 强制要求密钥满足最小长度
+ */
+function validateJwtSecretStrength(secret: string): void {
+  if (secret.length < MIN_JWT_SECRET_LENGTH) {
+    throw new Error(
+      `[AuthService] JWT_SECRET 强度不足：当前${secret.length}字符，要求至少${MIN_JWT_SECRET_LENGTH}字符。` +
+      `请使用: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
+    )
+  }
+  
+  // 检查是否为常见弱密钥
+  const weakSecrets = ['secret', 'password', 'jwt-secret', 'fallback-secret-key', '123456']
+  if (weakSecrets.includes(secret.toLowerCase()) || secret.length < 16) {
+    throw new Error(
+      '[AuthService] JWT_SECRET 使用了弱密钥，请使用强随机密钥。' +
+      '生成命令: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"'
+    )
+  }
+}
+
 function getJwtSecret(): Uint8Array {
   const secret = process.env.JWT_SECRET
   if (!secret) throw new Error('[AuthService] 缺少环境变量: JWT_SECRET')
+  
+  // 安全修复: 验证密钥强度
+  validateJwtSecretStrength(secret)
+  
   return new TextEncoder().encode(secret)
 }
 
 function getRefreshSecret(): Uint8Array {
   const secret = process.env.JWT_REFRESH_SECRET ?? process.env.JWT_SECRET
   if (!secret) throw new Error('[AuthService] 缺少环境变量: JWT_REFRESH_SECRET')
+  
+  // 安全修复: 验证密钥强度
+  validateJwtSecretStrength(secret)
+  
   return new TextEncoder().encode(secret)
 }
 
 /**
  * 签发 accessToken（HS256, 15分钟）
+ * 安全修复: 明确指定算法，防止算法混淆攻击
  */
 async function signAccessToken(userId: string, role: string): Promise<string> {
   return new SignJWT({ userId, role })
-    .setProtectedHeader({ alg: 'HS256' })
+    .setProtectedHeader({ alg: 'HS256' })  // 明确指定算法
     .setIssuedAt()
+    .setIssuer('zijing')  // 添加签发者
+    .setAudience('zijing-users')  // 添加受众
     .setExpirationTime(`${ACCESS_TOKEN_TTL}s`)
     .sign(getJwtSecret())
 }
@@ -209,13 +282,15 @@ export async function login({
     throw new BusinessException(ErrorCode.INVALID_PARAMS, '验证码必须为6位数字', 400)
   }
 
-  // 2. 加密手机号，用于数据库查询
+  // 2. 计算手机号的加密存储值与确定性检索索引
   const phoneEnc = encryptPhone(phone)
-  const failKey = REDIS_KEY.loginFailCount(phoneEnc)
+  const phoneIndex = getPhoneSearchIndex(phone)
+  // 失败计数 key 使用确定性索引（避免随机IV导致每次不同）
+  const failKey = REDIS_KEY.loginFailCount(phoneIndex)
 
-  // 3. 检查账号是否已锁定（通过数据库 locked_until 字段）
+  // 3. 检查账号是否已锁定（通过 phone_index 确定性查询，随机IV不影响检索）
   const existingProfile = await prisma.profile.findFirst({
-    where: { phone_enc: phoneEnc },
+    where: { phone_index: phoneIndex },
   })
 
   if (existingProfile) {
@@ -285,6 +360,7 @@ export async function login({
       const newProfile = await tx.profile.create({
         data: {
           phone_enc: phoneEnc,
+          phone_index: phoneIndex,  // BUG-001修复：存储确定性HMAC索引，用于后续登录检索
           role: 'adult',
           status: 'active',
         },

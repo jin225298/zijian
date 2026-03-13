@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { withAuth } from '@/server/middleware/auth.middleware'
+import { withCsrfProtection } from '@/server/middleware/csrf.middleware'
 import { handleApiError } from '@/server/middleware/error.middleware'
 import { getWordBookItems, addWordBookItem } from '@/server/services/wordbook.service'
 import type { JwtPayload } from '@/types'
@@ -65,21 +66,24 @@ export async function POST(
   request: NextRequest,
   context: RouteContext
 ): Promise<NextResponse> {
-  return withAuth(request, async (req, payload: JwtPayload) => {
-    try {
-      const { id: bookId } = await context.params
-      const body = await req.json()
-      const { character } = AddItemSchema.parse(body)
+  // BUG-002修复：通过 withCsrfProtection 包裹，防止跨站请求伪造
+  return withCsrfProtection(request, (req) =>
+    withAuth(req, async (req2, payload: JwtPayload) => {
+      try {
+        const { id: bookId } = await context.params
+        const body = await req2.json()
+        const { character } = AddItemSchema.parse(body)
 
-      const item = await addWordBookItem({
-        userId: payload.userId,
-        bookId,
-        character,
-      })
+        const item = await addWordBookItem({
+          userId: payload.userId,
+          bookId,
+          character,
+        })
 
-      return NextResponse.json(apiResponse(item), { status: 201 })
-    } catch (error) {
-      return handleApiError(error)
-    }
-  })
+        return NextResponse.json(apiResponse(item), { status: 201 })
+      } catch (error) {
+        return handleApiError(error)
+      }
+    })
+  )
 }
