@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import { Camera, Wifi, AlertTriangle } from 'lucide-react'
 import { CameraConnect } from './components/CameraConnect'
+import { authFetch } from '@/lib/authFetch'
 import { CameraStream } from './components/CameraStream'
 import { ScanResult } from './components/ScanResult'
 import { DeviceList } from './components/DeviceList'
@@ -35,7 +36,7 @@ export default function ScanPage() {
   useEffect(() => {
     const fetchHistory = async () => {
       try {
-        const res = await fetch('/api/v1/scan/history', { credentials: 'include' })
+        const res = await authFetch('/api/v1/scan/history')
         if (!res.ok) return
         const json: ApiResponse<{ items: ScanRecordDTO[] }> = await res.json()
         if (json.code === 0) setHistory(json.data?.items ?? [])
@@ -86,9 +87,8 @@ export default function ScanPage() {
       setRecognizeError(null)
 
       try {
-        const res = await fetch('/api/v1/scan/recognize', {
+        const res = await authFetch('/api/v1/scan/recognize', {
           method: 'POST',
-          credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             imageData,

@@ -9,6 +9,7 @@ import { VisualizeSection } from './components/VisualizeSection'
 import { SaveToBookButton } from './components/SaveToBookButton'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { authFetch } from '@/lib/authFetch'
 import type { CharDTO, ApiResponse } from '@/types'
 
 // 字体大小四档
@@ -36,9 +37,7 @@ export default function LearnPage() {
     setCurrentChar(null)
 
     try {
-      const res = await fetch(`/api/v1/chars/${encodeURIComponent(char)}`, {
-        credentials: 'include',
-      })
+      const res = await authFetch(`/api/v1/chars/${encodeURIComponent(char)}`)
 
       const json: ApiResponse<CharDTO> = await res.json()
 

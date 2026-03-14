@@ -28,7 +28,8 @@ class MemoryStore {
 
   async set(key: string, value: string, options?: { ex?: number }): Promise<void> {
     const expiresAt = options?.ex ? Date.now() + options.ex * 1000 : undefined
-    this.store.set(key, { value, expiresAt })
+    // 模拟 Upstash SDK 自动 JSON 序列化行为，确保 get 时 JSON.parse 返回正确类型
+    this.store.set(key, { value: JSON.stringify(value), expiresAt })
   }
 
   async setex(key: string, ttl: number, value: string): Promise<void> {
@@ -62,8 +63,17 @@ class MemoryStore {
   }
 }
 
+// 防止开发环境热重载时创建多个实例（与 prisma.ts 同理）
+declare global {
+  // eslint-disable-next-line no-var
+  var __memoryStore: MemoryStore | undefined
+}
+
 // 创建 Redis 客户端或内存降级
-const memoryStore = new MemoryStore()
+const memoryStore = globalThis.__memoryStore ?? new MemoryStore()
+if (!hasUpstashRedis) {
+  globalThis.__memoryStore = memoryStore
+}
 
 export const redis = hasUpstashRedis
   ? new Redis({

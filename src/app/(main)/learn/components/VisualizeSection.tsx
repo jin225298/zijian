@@ -5,6 +5,7 @@ import { ImageIcon, RefreshCw, ZoomIn } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { authFetch } from '@/lib/authFetch'
 
 // ================================
 // 类型定义（对应后端 VisualizeRequestDTO / TaskStatusDTO）
@@ -79,9 +80,7 @@ export function VisualizeSection({ char }: VisualizeSectionProps) {
     (tid: string) => {
       const doFetch = async () => {
         try {
-          const res = await fetch(`/api/v1/tasks/${tid}`, {
-            credentials: 'include',
-          })
+          const res = await authFetch(`/api/v1/tasks/${tid}`)
           // 任务接口返回 { success: true, data: TaskStatusDTO }
           const json = await res.json()
           const data: TaskStatus = json?.data ?? json
@@ -139,10 +138,9 @@ export function VisualizeSection({ char }: VisualizeSectionProps) {
     setProgress(0)
 
     try {
-      const res = await fetch(`/api/v1/chars/${encodeURIComponent(char)}/visualize`, {
+      const res = await authFetch(`/api/v1/chars/${encodeURIComponent(char)}/visualize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ type: 'image', style: 'cartoon' }),
       })
 

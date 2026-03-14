@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { BookmarkPlus, BookmarkCheck, ChevronDown, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { authFetch } from '@/lib/authFetch'
 import type { ApiResponse, WordbookDTO } from '@/types'
 
 interface SaveToBookButtonProps {
@@ -25,9 +26,7 @@ export function SaveToBookButton({ char }: SaveToBookButtonProps) {
     const fetchWordbooks = async () => {
       setLoadingBooks(true)
       try {
-        const res = await fetch('/api/v1/wordbooks', {
-          credentials: 'include',
-        })
+        const res = await authFetch('/api/v1/wordbooks')
         if (!res.ok) return
         const json: ApiResponse<{ items: WordbookDTO[] }> = await res.json()
         if (json.code === 0) {
@@ -50,9 +49,8 @@ export function SaveToBookButton({ char }: SaveToBookButtonProps) {
     setErrorMsg(null)
 
     try {
-      const res = await fetch(`/api/v1/wordbooks/${wordbook.id}/items`, {
+      const res = await authFetch(`/api/v1/wordbooks/${wordbook.id}/items`, {
         method: 'POST',
-        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ character: char }),
       })

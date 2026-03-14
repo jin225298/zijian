@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { WordbookCard } from './components/WordbookCard'
 import { LoadingSpinner } from '@/components/shared'
+import { authFetch } from '@/lib/authFetch'
 import { cn } from '@/lib/utils'
 import type { WordbookDTO, ApiResponse } from '@/types'
 
@@ -225,7 +226,7 @@ export default function WordbooksPage() {
     setIsLoading(true)
     setLoadError(null)
     try {
-      const res = await fetch('/api/v1/wordbooks', { credentials: 'include' })
+      const res = await authFetch('/api/v1/wordbooks')
       const json: ApiResponse<{ items: WordbookDTO[] }> = await res.json()
       if (!res.ok || json.code !== 0) {
         setLoadError(json.message ?? '加载失败')
@@ -245,9 +246,8 @@ export default function WordbooksPage() {
 
   // 创建识字库
   const handleCreate = async (name: string) => {
-    const res = await fetch('/api/v1/wordbooks', {
+    const res = await authFetch('/api/v1/wordbooks', {
       method: 'POST',
-      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
     })
