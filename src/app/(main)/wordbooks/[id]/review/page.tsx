@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { FlashCard } from '../../components/FlashCard'
 import { LoadingSpinner } from '@/components/shared'
 import { cn } from '@/lib/utils'
+import { authFetch } from '@/lib/authFetch'
 import type { ReviewItemDTO } from '@/server/services/wordbook.service'
 import type { StudyResult } from '../../components/FlashCard'
 
@@ -120,7 +121,7 @@ export default function ReviewPage() {
     setHintCount(0)
     setWrongCount(0)
     try {
-      const res = await fetch(`/api/v1/wordbooks/${bookId}/review`, { credentials: 'include' })
+      const res = await authFetch(`/api/v1/wordbooks/${bookId}/review`)
       const json: { success: boolean; data: { items: ReviewItemDTO[]; total: number } } = await res.json()
       if (!res.ok || !json.success) {
         setLoadError('加载复习数据失败，请稍后重试')
@@ -145,11 +146,10 @@ export default function ReviewPage() {
   const handleSubmit = async (itemId: string, result: StudyResult) => {
     setIsSubmitting(true)
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `/api/v1/wordbooks/${bookId}/items/${itemId}/study`,
         {
           method: 'POST',
-          credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ result }),
         }

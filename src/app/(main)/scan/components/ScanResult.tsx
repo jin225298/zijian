@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { authFetch } from '@/lib/authFetch'
 import type { ApiResponse, ScanResultDTO, ScanRecordDTO, WordbookDTO } from '@/types'
 
 // ================================
@@ -154,7 +155,7 @@ function ResultDetail({ result }: { result: ScanResultDTO }) {
     const fetchWordbooks = async () => {
       setLoadingBooks(true)
       try {
-        const res = await fetch('/api/v1/wordbooks', { credentials: 'include' })
+        const res = await authFetch('/api/v1/wordbooks')
         if (!res.ok) return
         const json: ApiResponse<{ items: WordbookDTO[] }> = await res.json()
         if (json.code === 0) setWordbooks(json.data?.items ?? [])
@@ -175,9 +176,8 @@ function ResultDetail({ result }: { result: ScanResultDTO }) {
     setSaveErrorMsg(null)
 
     try {
-      const res = await fetch(`/api/v1/wordbooks/${wordbook.id}/items`, {
+      const res = await authFetch(`/api/v1/wordbooks/${wordbook.id}/items`, {
         method: 'POST',
-        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ character: firstChar.character }),
       })

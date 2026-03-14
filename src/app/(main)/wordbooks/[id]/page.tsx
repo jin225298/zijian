@@ -14,6 +14,7 @@ import { CharListItem } from '../components/CharListItem'
 import { ProgressStats } from '../components/ProgressStats'
 import { LoadingSpinner } from '@/components/shared'
 import { cn } from '@/lib/utils'
+import { authFetch } from '@/lib/authFetch'
 import type { ApiResponse, WordbookDTO } from '@/types'
 import type { WordBookItemDTO, WordBookStatsDTO } from '@/server/services/wordbook.service'
 
@@ -85,7 +86,7 @@ export default function WordbookDetailPage() {
   // ---- 加载识字库基础信息（从列表接口获取） ----
   const loadWordbook = useCallback(async () => {
     try {
-      const res = await fetch('/api/v1/wordbooks', { credentials: 'include' })
+      const res = await authFetch('/api/v1/wordbooks')
       const json: ApiResponse<{ items: WordbookDTO[] }> = await res.json()
       if (res.ok && json.code === 0) {
         const found = json.data.items.find((w) => w.id === bookId)
@@ -107,9 +108,7 @@ export default function WordbookDetailPage() {
         status: filterStatus,
         sort: sortField,
       })
-      const res = await fetch(`/api/v1/wordbooks/${bookId}/items?${params}`, {
-        credentials: 'include',
-      })
+      const res = await authFetch(`/api/v1/wordbooks/${bookId}/items?${params}`)
       const json: ApiResponse<ItemsResponse> = await res.json()
       if (!res.ok || json.code !== 0) {
         setItemsError(json.message ?? '加载失败')
@@ -132,7 +131,7 @@ export default function WordbookDetailPage() {
   const loadStats = useCallback(async () => {
     setIsLoadingStats(true)
     try {
-      const res = await fetch(`/api/v1/wordbooks/${bookId}/stats`, { credentials: 'include' })
+      const res = await authFetch(`/api/v1/wordbooks/${bookId}/stats`)
       const json: { success: boolean; data: WordBookStatsDTO } = await res.json()
       if (res.ok && json.success) {
         setStats(json.data)
@@ -147,7 +146,7 @@ export default function WordbookDetailPage() {
   // ---- 加载待复习数量 ----
   const loadReviewCount = useCallback(async () => {
     try {
-      const res = await fetch(`/api/v1/wordbooks/${bookId}/review`, { credentials: 'include' })
+      const res = await authFetch(`/api/v1/wordbooks/${bookId}/review`)
       const json: { success: boolean; data: { total: number } } = await res.json()
       if (res.ok && json.success) {
         setReviewCount(json.data.total)

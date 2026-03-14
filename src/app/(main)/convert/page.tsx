@@ -3,6 +3,7 @@
 import { useState, useCallback } from 'react'
 import { History } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { authFetch } from '@/lib/authFetch'
 import { ConvertInput, type ConvertContext } from './components/ConvertInput'
 import { ConvertResult, type ConvertResultData } from './components/ConvertResult'
 import { ConvertHistory, type HistoryItem } from './components/ConvertHistory'
@@ -84,10 +85,9 @@ export default function ConvertPage() {
     setResult(null)
 
     try {
-      const res = await fetch('/api/v1/convert', {
+      const res = await authFetch('/api/v1/convert', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ text, context }),
       })
 
